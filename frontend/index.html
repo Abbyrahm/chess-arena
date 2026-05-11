@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Chess AI Trainer</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <div class="app-shell">
+    <h1>Chess AI Trainer</h1>
+    <div class="board-container" id="board"></div>
+    <div class="controls">
+      <button id="newGameButton">New Game</button>
+      <button id="trainButton">Train AI (Random)</button>
+      <button id="trainPlayerButton">Train from Moves</button>
+      <button id="learnFromWinButton" style="display:none; background: #10b981;">Learn from Win</button>
+      <span id="statusText"></span>
+    </div>
+    <div class="info-panel">
+      <div>
+        <label>Selected move:</label>
+        <span id="selectedMove">None</span>
+      </div>
+      <div>
+        <label>Last AI move:</label>
+        <span id="lastAiMove">None</span>
+      </div>
+      <div>
+        <label>Game status:</label>
+        <span id="gameStatus">Loading...</span>
+      </div>
+      <div>
+        <label>Moves recorded for training:</label>
+        <span id="recordedMoves">0</span>
+      </div>
+    </div>
+    <div class="log-panel">
+      <textarea id="log" readonly></textarea>
+    </div>
+  </div>
+  <script src="app.js"></script>
+</body>
+</html>
