@@ -5,9 +5,10 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-PROMOTION_OFFSET = 4096
+PROM_OFFSET = 4096
 PROMOTION_PIECES = [chess.QUEEN, chess.ROOK, chess.BISHOP, chess.KNIGHT]
-OUTPUT_SIZE = 4096 + 64
+PROM_FROM_SQUARES = list(range(8, 16)) + list(range(48, 56))  # Black rank 1 (8..15), White rank 6 (48..55)
+OUTPUT_SIZE = PROM_OFFSET + 64  # 16 from-squares × 4 promotion pieces
 
 
 def board_to_tensor(board: chess.Board) -> torch.Tensor:
@@ -24,12 +25,10 @@ def board_to_tensor(board: chess.Board) -> torch.Tensor:
 def move_to_index(move: chess.Move) -> int:
     if move.promotion is None:
         return move.from_square * 64 + move.to_square
-
-    if move.from_square >= 48:
-        base = (move.from_square - 48) * 4
-    else:
-        base = 32 + (move.from_square - 8) * 4
-    return PROMOTION_OFFSET + base + PROMOTION_PIECES.index(move.promotion)
+    
+    from_idx = PROM_FROM_SQUARES.index(move.from_square)
+    promo_idx = PROMOTION_PIECES.index(move.promotion)
+    return PROM_OFFSET + from_idx * 4 + promo_idx
 
 
 def index_to_move(index: int, board: chess.Board) -> chess.Move | None:
@@ -38,13 +37,15 @@ def index_to_move(index: int, board: chess.Board) -> chess.Move | None:
         to_sq = index % 64
         return chess.Move(from_sq, to_sq)
 
-    promo_index = index - PROMOTION_OFFSET
-    if promo_index < 32:
-        from_sq = 48 + promo_index // 4
-    else:
-        from_sq = 8 + (promo_index - 32) // 4
-    promotion = PROMOTION_PIECES[promo_index % 4]
-    to_sq = from_sq + 8 if from_sq >= 48 else from_sq - 8
+    promo_index = index - PROM_OFFSET
+    if promo_index < 0 or promo_index >= 64:
+        return None
+    
+    from_idx = promo_index // 4
+    promo_idx = promo_index % 4
+    from_sq = PROM_FROM_SQUARES[from_idx]
+    promotion = PROMOTION_PIECES[promo_idx]
+    to_sq = from_sq - 8 if from_sq < 16 else from_sq + 8
     return chess.Move(from_sq, to_sq, promotion=promotion)
 
 

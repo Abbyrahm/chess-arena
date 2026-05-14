@@ -11,6 +11,7 @@ const recordedMovesElement = document.getElementById("recordedMoves");
 let boardState = null;
 let selectedSquare = null;
 let legalMoves = [];
+let promotionMovePrefix = null;
 
 const pieceMap = {
   p: "♟",
@@ -31,8 +32,18 @@ function squareName(file, rank) {
   return String.fromCharCode(97 + file) + (rank + 1);
 }
 
-function setLog(message) {
-  logElement.value = `${new Date().toLocaleTimeString()} — ${message}\n${logElement.value}`;
+function setLog(message, level = "info") {
+  const formatted = `${new Date().toLocaleTimeString()} — ${message}`;
+  if (level === "warn") {
+    console.warn(formatted);
+  } else if (level === "error") {
+    console.error(formatted);
+  } else {
+    console.log(formatted);
+  }
+  if (logElement) {
+    logElement.value = `${formatted}\n${logElement.value}`;
+  }
 }
 
 function renderBoard(fen) {
@@ -66,28 +77,71 @@ function renderBoard(fen) {
 }
 
 function updateStatus(status) {
-  console.log("Updating status to:", status); // Debug log
   gameStatusElement.textContent = status;
 }
 
+function showPromotionPicker() {
+  const picker = document.getElementById("promotionPicker");
+  picker.style.display = "flex";
+}
+
+function hidePromotionPicker() {
+  promotionMovePrefix = null;
+  const picker = document.getElementById("promotionPicker");
+  picker.style.display = "none";
+}
+
 function highlightSelected() {
+  const legalTargets = new Set(legalMoves.map((move) => move.slice(2)));
   document.querySelectorAll(".square").forEach((square) => {
-    square.classList.toggle("selected", square.dataset.square === selectedSquare);
+    const squareName = square.dataset.square;
+    square.classList.toggle("selected", squareName === selectedSquare);
+    square.classList.toggle("legal-target", selectedSquare && legalTargets.has(squareName));
   });
+}
+
+function clearSelection() {
+  selectedSquare = null;
+  legalMoves = [];
+  selectedMoveElement.textContent = "None";
+  hidePromotionPicker();
+  highlightSelected();
+}
+
+function selectSquare(square) {
+  selectedSquare = square;
+  selectedMoveElement.textContent = square;
+  legalMoves = boardState?.moves?.filter((move) => move.startsWith(square)) || [];
+  hidePromotionPicker();
+  highlightSelected();
 }
 
 function onSquareClick(event) {
   const square = event.currentTarget.dataset.square;
   if (!selectedSquare) {
-    selectedSquare = square;
-    selectedMoveElement.textContent = square;
-  } else {
-    const move = `${selectedSquare}${square}`;
-    sendMove(move);
-    selectedSquare = null;
-    selectedMoveElement.textContent = "None";
+    selectSquare(square);
+    return;
   }
-  highlightSelected();
+
+  if (square === selectedSquare) {
+    clearSelection();
+    return;
+  }
+
+  const matching = legalMoves.filter((move) => move.startsWith(`${selectedSquare}${square}`));
+  if (!matching.length) {
+    selectSquare(square);
+    return;
+  }
+
+  if (matching.length === 1) {
+    sendMove(matching[0]);
+    clearSelection();
+    return;
+  }
+
+  promotionMovePrefix = `${selectedSquare}${square}`;
+  showPromotionPicker();
 }
 
 async function sendMove(move) {
@@ -100,13 +154,15 @@ async function sendMove(move) {
 
     if (!response.ok) {
       const error = await response.json();
-      setLog(`Illegal move or server issue: ${error.error || response.statusText}`);
+      console.warn("Illegal move or server issue:", error.error || response.statusText, error.details || "");
+      setLog(`Illegal move or server issue: ${error.error || response.statusText}${error.details ? ' - ' + error.details : ''}`, "warn");
       return;
     }
 
     const data = await response.json();
-    console.log("Move response:", data); // Debug log
+    boardState = data;
     renderBoard(data.fen);
+    clearSelection();
     if (data.ai_move) {
       lastAiMoveElement.textContent = data.ai_move;
       setLog(`Player: ${move}, AI: ${data.ai_move}`);
@@ -138,8 +194,9 @@ async function loadStatus() {
       throw new Error(`HTTP ${response.status}: ${response.statusText}`);
     }
     const data = await response.json();
-    console.log("Status data:", data); // Debug log
+    boardState = data;
     renderBoard(data.fen);
+    clearSelection();
     updateStatus(data.is_game_over ? `Game over: ${data.result || "ended"}` : `Your turn (${data.turn})`);
     recordedMovesElement.textContent = data.recorded_moves || 0;
     lastAiMoveElement.textContent = "None";
@@ -156,8 +213,9 @@ newGameButton.addEventListener("click", async () => {
       throw new Error(`HTTP ${response.status}: ${response.statusText}`);
     }
     const data = await response.json();
-    console.log("New game data:", data); // Debug log
+    boardState = data;
     renderBoard(data.fen);
+    clearSelection();
     updateStatus("Your turn (white)");
     recordedMovesElement.textContent = 0;
     lastAiMoveElement.textContent = "None";
@@ -182,7 +240,6 @@ trainButton.addEventListener("click", async () => {
       throw new Error(`HTTP ${response.status}: ${response.statusText}`);
     }
     const result = await response.json();
-    console.log("Training result:", result); // Debug log
     setLog(`Training complete: ${result.message}`);
   } catch (error) {
     console.error("Training failed:", error);
@@ -207,7 +264,6 @@ trainPlayerButton.addEventListener("click", async () => {
       throw new Error(error.message || `HTTP ${response.status}`);
     }
     const result = await response.json();
-    console.log("Training result:", result); // Debug log
     setLog(`Training complete: ${result.message}`);
   } catch (error) {
     console.error("Training failed:", error);
@@ -216,6 +272,24 @@ trainPlayerButton.addEventListener("click", async () => {
     trainPlayerButton.textContent = "Train from Moves";
     trainPlayerButton.disabled = false;
   }
+});
+
+document.getElementById("promotionPicker").addEventListener("click", (event) => {
+  const button = event.target.closest("button[data-piece]");
+  if (!button || !promotionMovePrefix) {
+    return;
+  }
+  const promotionPiece = button.dataset.piece;
+  console.info(`Promotion selected: ${promotionMovePrefix}${promotionPiece}`);
+  const fullMove = `${promotionMovePrefix}${promotionPiece}`;
+  hidePromotionPicker();
+  sendMove(fullMove);
+  clearSelection();
+});
+
+document.getElementById("cancelPromotionButton").addEventListener("click", () => {
+  hidePromotionPicker();
+  clearSelection();
 });
 
 document.getElementById("learnFromWinButton").addEventListener("click", async () => {
@@ -233,7 +307,6 @@ document.getElementById("learnFromWinButton").addEventListener("click", async ()
       throw new Error(error.message || `HTTP ${response.status}`);
     }
     const result = await response.json();
-    console.log("Learning result:", result); // Debug log
     setLog(`AI reinforced! Trained on ${result.data_pairs} winning moves for ${result.epochs} epochs.`);
     learnButton.style.display = "none";
   } catch (error) {

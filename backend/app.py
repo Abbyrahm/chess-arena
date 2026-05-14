@@ -1,4 +1,5 @@
 from flask import Flask, jsonify, request
+import chess
 import os
 import torch
 
@@ -47,37 +48,74 @@ def new_game():
 
 @app.route("/api/move", methods=["POST"])
 def make_move():
-    data = request.get_json(force=True)
-    uci = data.get("move")
-    if not uci:
-        return jsonify({"error": "missing move"}), 400
-    if not game.push_uci(uci, is_player=True):  # Record player move for learning
-        return jsonify({"error": "illegal move"}), 400
+    try:
+        data = request.get_json(force=True)
+        uci = data.get("move")
+        if not uci:
+            print("WARNING: Move request missing 'move' field")
+            return jsonify({"error": "missing move"}), 400
 
-    response = {
-        "fen": game.board.fen(),
-        "moves": game.legal_moves_uci(),
-        "last_move": uci,
-        "is_game_over": game.board.is_game_over(),
-        "result": game.result(),
-    }
+        try:
+            move = chess.Move.from_uci(uci)
+        except ValueError as exc:
+            print(f"WARNING: Invalid UCI received: {uci} - {exc}")
+            return jsonify({
+                "error": "invalid move format",
+                "details": str(exc),
+                "fen": game.board.fen(),
+                "turn": "white" if game.board.turn else "black",
+                "legal_moves": game.legal_moves_uci()
+            }), 400
 
-    if not response["is_game_over"]:
-        ai_move = predict_move(game.board, model)
-        if ai_move:
-            game.push_uci(ai_move)
-            response["ai_move"] = ai_move
-            response["fen"] = game.board.fen()
-            response["moves"] = game.legal_moves_uci()
-            response["is_game_over"] = game.board.is_game_over()
-            response["result"] = game.result()
+        if move not in game.board.legal_moves:
+            print(f"WARNING: Illegal move attempted: {uci}")
+            return jsonify({
+                "error": "illegal move",
+                "details": "move not legal in current position",
+                "fen": game.board.fen(),
+                "turn": "white" if game.board.turn else "black",
+                "legal_moves": game.legal_moves_uci()
+            }), 400
+
+        print(f"INFO: Player move applied: {uci}")
+        if not game.push_uci(uci, is_player=True):
+            print(f"ERROR: Failed to push move {uci} after validation")
+            return jsonify({
+                "error": "failed to apply move",
+                "details": "move validation passed but application failed"
+            }), 400
+
+        response = {
+            "fen": game.board.fen(),
+            "moves": game.legal_moves_uci(),
+            "last_move": uci,
+            "is_game_over": game.board.is_game_over(),
+            "result": game.result(),
+        }
+
+        if not response["is_game_over"]:
+            ai_move = predict_move(game.board, model)
+            if ai_move:
+                game.push_uci(ai_move)
+                response["ai_move"] = ai_move
+                response["fen"] = game.board.fen()
+                response["moves"] = game.legal_moves_uci()
+                response["is_game_over"] = game.board.is_game_over()
+                response["result"] = game.result()
+        
+        # If game just ended, offer reinforcement learning from winning moves
+        if response["is_game_over"] and game.get_winning_moves():
+            response["can_learn_from_win"] = True
+            response["learning_message"] = "Game ended! You can train the AI from the winning moves using the 'Learn from Win' button."
+
+        return jsonify(response)
     
-    # If game just ended, offer reinforcement learning from winning moves
-    if response["is_game_over"] and game.get_winning_moves():
-        response["can_learn_from_win"] = True
-        response["learning_message"] = "Game ended! You can train the AI from the winning moves using the 'Learn from Win' button."
-
-    return jsonify(response)
+    except Exception as e:
+        print(f"ERROR: Unexpected error in make_move: {str(e)}")
+        return jsonify({
+            "error": "server error",
+            "details": str(e)
+        }), 500
 
 
 @app.route("/api/train", methods=["POST"])
