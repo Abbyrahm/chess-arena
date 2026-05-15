@@ -4,13 +4,11 @@ import chess
 class ChessGame:
     def __init__(self):
         self.reset()
-        self.move_history = []  # Track (board_state_fen, move_uci, player_color) for learning
-        self.all_moves = []  # Track all moves in current game for reinforcement learning
-
+        
     def reset(self):
         self.board = chess.Board()
-        self.move_history = []
-        self.all_moves = []  # Reset for new game
+        self.move_history = [] # Track (board_state_fen, move_uci, player_color) for learning
+        self.all_moves = []  # Track all moves in current game for reinforcement learning
 
     def legal_moves_uci(self):
         return [move.uci() for move in self.board.legal_moves]
@@ -32,7 +30,7 @@ class ChessGame:
                     'color': 'white' if self.board.turn else 'black',
                     'is_player': is_player
                 })
-                
+
                 if is_player:
                     # Also record in player history
                     self.move_history.append({
