@@ -32,7 +32,7 @@ def move_to_index(move: chess.Move) -> int:
 
 
 def index_to_move(index: int, board: chess.Board) -> chess.Move | None:
-    if index < 4096:
+    if index < PROM_OFFSET:
         from_sq = index // 64
         to_sq = index % 64
         return chess.Move(from_sq, to_sq)
